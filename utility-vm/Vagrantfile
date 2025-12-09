@@ -9,7 +9,7 @@ end
 
 Vagrant.configure("2") do |config|
 
-  # ------------ MACHINE-SPECIFIC SETTINGS -----------------
+  # ------------ MACHINE-SPECIFIC FOR LENOVO E560 -----------------
 
   VM_NAME    = "utility-vm"
   IP_ADDRESS = "192.168.1.113"
@@ -23,7 +23,7 @@ Vagrant.configure("2") do |config|
   SSH_PUBLIC_KEY = SECRETS['ssh_key']
 
   # Interface on host
-  BRIDGE_IFACE = "enp1s0"
+  BRIDGE_IFACE = "enp0s31f6"
 
   # All cluster hosts
   HOSTS = {

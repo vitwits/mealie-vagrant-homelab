@@ -9,7 +9,7 @@ end
 
 Vagrant.configure("2") do |config|
 
-  # ------------ MACHINE-SPECIFIC SETTINGS -----------------
+  # ------------ MACHINE-SPECIFIC FOR LENOVO G570  -----------------
 
   VM_NAME    = "elk-vm"
   IP_ADDRESS = "192.168.1.111"

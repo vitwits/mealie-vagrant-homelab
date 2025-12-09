@@ -14,6 +14,12 @@ ip link show
 ```
 e.g. BRIDGE_IFACE = "enp1s0"
 
+Also rename the secrets example file and populate it with your public SSH key
+
+```bash
+mv secrets.yml.example secrets.yml
+```
+
 > **Requirements:**  
 > - Vagrant  
 > - libvirt (QEMU/KVM)  
