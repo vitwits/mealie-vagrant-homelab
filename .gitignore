@@ -1,0 +1,8 @@
+# Vagrant Local Data
+**/.vagrant/
+
+# Actual Secrets File
+secrets.yml
+
+# Environment variables
+.env

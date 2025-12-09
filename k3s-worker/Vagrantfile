@@ -1,0 +1,127 @@
+require 'yaml'
+begin
+  SECRETS = YAML.load_file('secrets.yml')
+rescue
+  # Warning: The secrets.yml file was not found, default settings are being used.
+  puts "Warning: The secrets.yml file was not found, default settings are being used."
+  SECRETS = { 'ssh_key' => nil }
+end
+
+Vagrant.configure("2") do |config|
+
+  # ------------ MACHINE-SPECIFIC SETTINGS -----------------
+
+  VM_NAME    = "k3s-worker"
+  IP_ADDRESS = "192.168.1.112"
+  MEMORY_MB  = 4096
+  CPU_COUNT  = 2
+
+  # --------------------------------------------------------
+
+  # Common user for Ansible
+  USERNAME       = "ansible"
+  SSH_PUBLIC_KEY = SECRETS['ssh_key']
+
+  # Interface on host
+  BRIDGE_IFACE = "enp1s0"
+
+  # All cluster hosts
+  HOSTS = {
+    "k3s-master" => "192.168.1.110",
+    "elk-vm"     => "192.168.1.111",
+    "k3s-worker" => "192.168.1.112",
+    "utility-vm" => "192.168.1.113"
+  }
+
+  # Base box
+  config.vm.box = "debian/bookworm64"
+
+  # Hostname
+  config.vm.hostname = VM_NAME
+
+  # Network
+  config.vm.network "public_network", dev: BRIDGE_IFACE, ip: IP_ADDRESS
+
+  # Provider setup
+  config.vm.provider :libvirt do |libvirt|
+    libvirt.driver = "kvm"
+    libvirt.memory = MEMORY_MB
+    libvirt.cpus   = CPU_COUNT
+  end
+
+  # --------------------------------------------------------
+  #  PROVISION SCRIPT
+  # --------------------------------------------------------
+
+  config.vm.provision "shell", inline: <<-SHELL
+    #!/bin/bash
+    set -e
+
+    USERNAME="#{USERNAME}"
+    SSH_KEY="#{SSH_PUBLIC_KEY}"
+
+    echo ">>> Creating user #{USERNAME}..."
+    id -u $USERNAME &>/dev/null || useradd -m -s /bin/bash $USERNAME
+
+    echo ">>> Setting up SSH..."
+    mkdir -p /home/$USERNAME/.ssh
+    echo "$SSH_KEY" > /home/$USERNAME/.ssh/authorized_keys
+    chmod 700 /home/$USERNAME/.ssh
+    chmod 600 /home/$USERNAME/.ssh/authorized_keys
+    chown -R $USERNAME:$USERNAME /home/$USERNAME/.ssh
+
+    echo ">>> Enabling passwordless sudo..."
+    echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME
+
+    echo ">>> Updating system..."
+    apt-get update && apt-get upgrade -y
+
+    echo ">>> Disabling SWAP..."
+    swapoff -a
+    sed -i '/ swap / s/^/#/' /etc/fstab
+
+    echo ">>> Setting timezone..."
+    ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime
+
+    echo ">>> Installing base packages..."
+    apt-get install -y \
+      curl wget git vim htop ufw net-tools traceroute apt-transport-https \
+      ca-certificates gnupg lsb-release
+
+    echo ">>> Configuring UFW firewall..."
+    ufw --force reset                     # Reset all existing rules
+
+    ufw allow ssh                         # Allow SSH access (port 22)
+    ufw allow 80                          # Allow HTTP (Traefik / web apps)
+    ufw allow 443                         # Allow HTTPS (Traefik / web apps)
+    ufw allow 6443                        # Allow Kubernetes API server (master → worker communication)
+    ufw allow 2379:2380/tcp               # Allow etcd ports (Kubernetes / k3s cluster compatibility)
+    ufw allow 10250/tcp                    # Allow Kubelet API (metrics, health checks)
+    ufw allow 30000:32767/tcp              # Allow NodePort services (Kubernetes NodePort range)
+    ufw allow 9200/tcp                     # Allow Elasticsearch API (elk-vm)
+    ufw allow 5601/tcp                     # Allow Kibana UI access (elk-vm)
+    ufw allow 5044/tcp                     # Allow Logstash Beats input (Filebeat → Logstash)
+    ufw allow 5000/tcp                     # Allow Docker Registry port (utility-vm)
+
+    ufw --force enable                     # Enable firewall with the above rules
+
+    echo ">>> Updating /etc/hosts..."
+    echo "192.168.1.110 k3s-master"   >> /etc/hosts
+    echo "192.168.1.111 elk-vm"       >> /etc/hosts
+    echo "192.168.1.112 k3s-worker"   >> /etc/hosts
+    echo "192.168.1.113 utility-vm"   >> /etc/hosts
+
+    echo ">>> Setting kernel limits for Kubernetes..."
+    echo "fs.inotify.max_user_watches=524288"   >  /etc/sysctl.d/99-kubernetes.conf
+    echo "fs.inotify.max_user_instances=512"   >> /etc/sysctl.d/99-kubernetes.conf
+    sysctl --system
+
+
+    echo ">>> Hardening SSH..."
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
+    systemctl restart ssh
+
+    echo ">>> VM Bootstrap Complete!"
+  SHELL
+end
