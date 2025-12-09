@@ -1,6 +1,6 @@
 require 'yaml'
 begin
-  SECRETS = YAML.load_file('secrets.yml')
+  SECRETS = YAML.load_file(File.expand_path('../../secrets.yml', __FILE__))
 rescue
   # Warning: The secrets.yml file was not found, default settings are being used.
   puts "Warning: The secrets.yml file was not found, default settings are being used."
